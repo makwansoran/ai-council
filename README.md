@@ -1,5 +1,7 @@
 # AI Market Council
 
+Canonical repository: [github.com/makwansoran/ai-council](https://github.com/makwansoran/ai-council)
+
 Polymarket analytics tool focused on **political and war/geopolitical markets**.
 It continuously:
 
