@@ -12,14 +12,6 @@ async function ingestCouncil(req: Request) {
   const limit = Math.min(Number(url.searchParams.get("limit") || 5), 12);
   const minAgeMinutes = Number(url.searchParams.get("minAgeMinutes") || 30);
 
-  if (!process.env.AI_GATEWAY_API_KEY && !process.env.VERCEL) {
-    return {
-      skipped: true,
-      reason: "AI_GATEWAY_API_KEY is not set, so council runs are paused.",
-      ran: 0,
-    };
-  }
-
   const [markets, recentRuns] = await Promise.all([
     listInScopeMarkets(80),
     recentCouncilRuns(500),

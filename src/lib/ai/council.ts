@@ -35,6 +35,71 @@ function snapshotSeries(snapshots: { captured_at: string; yes_price: number | nu
     .join("\n");
 }
 
+function fallbackCouncilOutput({
+  market,
+  snapshots,
+  signals,
+  traderBlock,
+}: {
+  market: { question: string; category: string; is_hormuz: boolean };
+  snapshots: { yes_price: number | null }[];
+  signals: Array<{ id: number; title: string; weight: number; is_hormuz: boolean; kind: string }>;
+  traderBlock: string;
+}): CouncilOutput {
+  const prices = snapshots
+    .map((s) => s.yes_price)
+    .filter((price): price is number => typeof price === "number");
+  const latest = prices.at(0) ?? null;
+  const oldest = prices.at(-1) ?? null;
+  const trend = latest !== null && oldest !== null ? latest - oldest : 0;
+  const signalWeight = signals.reduce((sum, signal) => sum + Math.max(0, signal.weight), 0);
+  const hormuzHeat = market.is_hormuz || signals.some((signal) => signal.is_hormuz);
+  const highSignalPressure = signalWeight >= 8 || signals.length >= 12;
+
+  let action: CouncilOutput["action"] = "hold";
+  if ((hormuzHeat || market.category === "war") && highSignalPressure && trend >= -0.03) {
+    action = "buy_yes";
+  } else if (trend > 0.08 && signalWeight < 3) {
+    action = "sell_yes";
+  } else if (trend < -0.08 && highSignalPressure) {
+    action = "buy_no";
+  }
+
+  const confidence =
+    action === "hold"
+      ? Math.min(0.48, 0.24 + signals.length * 0.01)
+      : Math.min(0.72, 0.42 + Math.min(0.18, signalWeight / 100) + Math.abs(trend));
+  const suggestedSize = action === "hold" ? 0 : Math.round(100000 * Math.min(0.025, confidence * 0.025));
+  const topSignal = signals[0]?.title ?? "no dominant fresh signal";
+
+  return {
+    action,
+    confidence,
+    suggested_size_usd: suggestedSize,
+    thesis:
+      action === "hold"
+        ? `Hold for now. The market has ${signals.length} recent signals, but the captured evidence is not strong enough to justify adding capital yet.`
+        : `Lean ${action.replace("_", " ")}. Recent signal pressure around "${topSignal}" and price movement create a monitorable edge, but size remains capped until the AI model key is enabled.`,
+    counter_thesis:
+      "The rule-based fallback may miss nuance in breaking news, market microstructure, or top-trader intent, so a human should confirm before acting.",
+    risks: [
+      "No AI Gateway key is set, so this is the deterministic fallback council.",
+      "Fast-moving political or war news can reverse this market before the next ingest cycle.",
+      "Top-trader activity may reflect hedging or market making instead of directional conviction.",
+    ],
+    drivers: [
+      `${signals.length} recent relevant signals with combined weight ${signalWeight.toFixed(1)}.`,
+      `Latest captured YES trend is ${trend >= 0 ? "+" : ""}${trend.toFixed(3)}.`,
+      hormuzHeat ? "Hormuz or war-risk flag is active." : "Politics/geopolitics scope is active.",
+      `Trader context: ${traderBlock === "(no trader activity captured)" ? "none captured yet" : "recent top-trader flow captured"}.`,
+    ],
+    trader_notes:
+      traderBlock === "(no trader activity captured)"
+        ? "No usable top-trader activity is attached to this market yet."
+        : "Top-trader activity is present and should be reviewed on the market detail page before confirming any order intent.",
+  };
+}
+
 export async function runCouncilForMarket(marketId: string): Promise<CouncilRunRow> {
   const market = await getMarket(marketId);
   if (!market) throw new Error(`market ${marketId} not found`);
@@ -76,6 +141,24 @@ export async function runCouncilForMarket(marketId: string): Promise<CouncilRunR
   const snapshotsBlock = snapshotSeries(snapshots) || "(no snapshots yet)";
 
   const traderBlock = traderTradeBlocks.join("\n\n") || "(no trader activity captured)";
+
+  if (!process.env.AI_GATEWAY_API_KEY && !process.env.VERCEL) {
+    const output = fallbackCouncilOutput({ market, snapshots, signals, traderBlock });
+    return insertCouncilRun({
+      market_id: marketId,
+      model: "fallback/no-ai-gateway-key",
+      action: output.action,
+      confidence: output.confidence,
+      suggested_size_usd: output.suggested_size_usd,
+      thesis: output.thesis,
+      counter_thesis: output.counter_thesis,
+      risks: output.risks,
+      drivers: output.drivers,
+      trader_notes: output.trader_notes,
+      signal_ids: signals.map((s) => s.id),
+      raw: { output, fallback: true },
+    });
+  }
 
   const prompt = `You are the AI Trading Council for the Polymarket prediction market below.
 Your scope is strictly POLITICAL and WAR/GEOPOLITICAL markets. You always produce
