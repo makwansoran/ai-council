@@ -3,6 +3,7 @@ import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { AutoRefresh } from "@/components/auto-refresh";
 import { TriggerIngest } from "@/components/trigger-ingest";
+import { NewXAccountForm, XAccountActions } from "@/components/x-account-manager";
 import { listXAccounts, recentXPosts } from "@/lib/repo";
 import { timeAgo } from "@/lib/utils";
 
@@ -32,26 +33,34 @@ export default async function XPage() {
             {accounts.map((a) => (
               <div
                 key={a.handle}
-                className="flex items-center justify-between rounded-md border border-[var(--border)] bg-[var(--background-elevated)] px-3 py-2 text-sm"
+                className="rounded-md border border-[var(--border)] bg-[var(--background-elevated)] px-3 py-2 text-sm"
               >
-                <div>
-                  <a
-                    href={`https://x.com/${a.handle}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="font-medium hover:text-[var(--accent-strong)]"
-                  >
-                    @{a.handle}
-                  </a>
-                  <div className="text-[10px] text-[var(--foreground-muted)]">
-                    {a.role ?? "—"}
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <a
+                      href={`https://x.com/${a.handle}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="font-medium hover:text-[var(--accent-strong)]"
+                    >
+                      @{a.handle}
+                    </a>
+                    <div className="text-[10px] text-[var(--foreground-muted)]">
+                      {a.role ?? "—"}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <Badge tone={a.category === "war" ? "warn" : "accent"}>
+                      {a.category}
+                    </Badge>
+                    <Badge tone={a.enabled ? "positive" : "muted"}>
+                      {a.enabled ? "on" : "paused"}
+                    </Badge>
+                    <Badge tone="muted">w{a.importance}</Badge>
                   </div>
                 </div>
-                <div className="flex items-center gap-1">
-                  <Badge tone={a.category === "war" ? "warn" : "accent"}>
-                    {a.category}
-                  </Badge>
-                  <Badge tone="muted">w{a.importance}</Badge>
+                <div className="mt-2">
+                  <XAccountActions account={a} />
                 </div>
               </div>
             ))}
@@ -97,6 +106,15 @@ export default async function XPage() {
           </CardBody>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Add X account</CardTitle>
+        </CardHeader>
+        <CardBody>
+          <NewXAccountForm />
+        </CardBody>
+      </Card>
     </div>
   );
 }

@@ -90,8 +90,9 @@ stored in `polymarket_api_references` and `polymarket_api_runs`.
 - `/leaderboard` — top traders (day / week / month / all).
 - `/leaderboard/[wallet]` — trader detail with positions and trades.
 - `/signals` — unified live feed.
-- `/scrapers` — list + create new scrapers.
+- `/scrapers` — add, edit, pause, run, and remove custom scrapers.
 - `/scrapers/[id]` — scraper detail with run history.
+- `/news` — add, pause, edit, and remove RSS/news sources.
 - `/x` — X watchlist + recent posts.
 - `/hormuz` — 24/7 Strait of Hormuz monitor.
 - `/council` — recent AI council runs.

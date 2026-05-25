@@ -7,6 +7,7 @@ import { TriggerIngest } from "@/components/trigger-ingest";
 import { listScrapers } from "@/lib/repo";
 import { timeAgo } from "@/lib/utils";
 import { NewScraperForm } from "@/components/new-scraper-form";
+import { ScraperActions } from "@/components/scraper-actions";
 
 export const dynamic = "force-dynamic";
 
@@ -35,7 +36,8 @@ export default async function ScrapersPage() {
                   <th className="px-3 py-2">Kind</th>
                   <th className="px-3 py-2">Cadence</th>
                   <th className="px-3 py-2">Last run</th>
-                  <th className="px-3 py-2">Status</th>
+                <th className="px-3 py-2">Status</th>
+                <th className="px-3 py-2">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -78,12 +80,15 @@ export default async function ScrapersPage() {
                         <Badge tone="muted">paused</Badge>
                       )}
                     </td>
+                  <td className="px-3 py-2">
+                    <ScraperActions scraper={s} />
+                  </td>
                   </tr>
                 ))}
                 {scrapers.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={5}
+                    colSpan={6}
                       className="px-3 py-8 text-center text-xs text-[var(--foreground-muted)]"
                     >
                       No scrapers yet. Create one on the right.

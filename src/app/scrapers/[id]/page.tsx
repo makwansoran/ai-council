@@ -4,6 +4,7 @@ import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { AutoRefresh } from "@/components/auto-refresh";
 import { TriggerIngest } from "@/components/trigger-ingest";
+import { ScraperActions } from "@/components/scraper-actions";
 import { getScraper, recentScraperRuns } from "@/lib/repo";
 import { timeAgo } from "@/lib/utils";
 
@@ -30,7 +31,10 @@ export default async function ScraperDetailPage({ params }: Props) {
           </span>
         }
         actions={
-          <TriggerIngest endpoint={`/api/scrapers/${scraper.id}/run`} label="Run now" variant="primary" />
+          <>
+            <ScraperActions scraper={scraper} />
+            <TriggerIngest endpoint={`/api/scrapers/${scraper.id}/run`} label="Run now" variant="primary" />
+          </>
         }
       />
 

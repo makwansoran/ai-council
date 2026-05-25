@@ -22,6 +22,7 @@ const items = [
   { href: "/leaderboard", label: "Top Traders", icon: Users },
   { href: "/signals", label: "Signal Feed", icon: Radio },
   { href: "/scrapers", label: "Scrapers", icon: Rss },
+  { href: "/news", label: "News Sources", icon: Rss },
   { href: "/x", label: "X Watchlist", icon: AtSign },
   { href: "/hormuz", label: "Hormuz 24/7", icon: AlertTriangle },
   { href: "/council", label: "AI Council", icon: Bot },

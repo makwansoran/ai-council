@@ -296,6 +296,12 @@ export async function upsertXAccount(row: Partial<XAccountRow>) {
   if (error) throw error;
 }
 
+export async function deleteXAccount(handle: string) {
+  const sb = supabaseService();
+  const { error } = await sb.from("x_accounts").delete().eq("handle", handle);
+  if (error) throw error;
+}
+
 export async function upsertXPosts(rows: Partial<XPostRow>[]) {
   if (!rows.length) return;
   const sb = supabaseService();
@@ -325,6 +331,20 @@ export async function listNewsSources(): Promise<NewsSourceRow[]> {
     .order("name");
   if (error) throw error;
   return (data || []) as NewsSourceRow[];
+}
+
+export async function upsertNewsSource(row: Partial<NewsSourceRow>) {
+  const sb = supabaseService();
+  const { error } = await sb.from("news_sources").upsert(row, {
+    onConflict: "id",
+  });
+  if (error) throw error;
+}
+
+export async function deleteNewsSource(id: string) {
+  const sb = supabaseService();
+  const { error } = await sb.from("news_sources").delete().eq("id", id);
+  if (error) throw error;
 }
 
 export async function upsertNewsArticles(rows: Partial<NewsArticleRow>[]) {
