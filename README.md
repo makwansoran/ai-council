@@ -13,9 +13,10 @@ It continuously:
   and arbitrary web pages.
 - Watches the **Strait of Hormuz 24/7** by aggregating Hormuz-relevant X posts
   and news into an event timeline.
-- Feeds everything into an **AI Council** that runs continuously through the
-  ingest loop and produces structured trade analysis (thesis, counter-thesis,
-  confidence, risks, drivers, suggested size).
+- Feeds everything into an **AI Council LLM trading agent** that runs
+  continuously through the ingest loop, inspects market context, price history,
+  live signals, and top-trader flow with tools, then produces structured trade
+  analysis (thesis, counter-thesis, confidence, risks, drivers, suggested size).
 - Lets you run **paper trades** and prepare **manual-confirm order intents**.
   Nothing is ever submitted to Polymarket automatically.
 
@@ -50,7 +51,7 @@ See [.env.example](.env.example). At minimum you need:
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 - `SUPABASE_SERVICE_ROLE_KEY`
-- `AI_GATEWAY_API_KEY` (or run on Vercel for OIDC)
+- `AI_GATEWAY_API_KEY` (or run on Vercel for OIDC) to enable the LLM trading agent
 - `AI_MODEL` (defaults to `openai/gpt-5`)
 - `CAPITAL_UNDER_MANAGEMENT_USD` (defaults to `100000`, used for allocation sizing)
 - Optional: `X_BEARER_TOKEN` for the official X API (otherwise nitter fallback)

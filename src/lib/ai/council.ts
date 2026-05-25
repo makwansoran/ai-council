@@ -1,4 +1,4 @@
-import { generateText, Output } from "ai";
+import { Output, ToolLoopAgent, stepCountIs, tool } from "ai";
 import { z } from "zod";
 import { getAiModel } from "@/lib/env";
 import {
@@ -23,6 +23,15 @@ export const councilSchema = z.object({
 });
 
 export type CouncilOutput = z.infer<typeof councilSchema>;
+
+function compactToolTrace(
+  steps: Array<{ toolCalls?: Array<{ toolName: string }> }>,
+) {
+  return steps.map((step, index) => ({
+    step: index,
+    tools: step.toolCalls?.map((call) => call.toolName) ?? [],
+  }));
+}
 
 function snapshotSeries(snapshots: { captured_at: string; yes_price: number | null }[]) {
   return snapshots
@@ -160,52 +169,110 @@ export async function runCouncilForMarket(marketId: string): Promise<CouncilRunR
     });
   }
 
-  const prompt = `You are the AI Trading Council for the Polymarket prediction market below.
-Your scope is strictly POLITICAL and WAR/GEOPOLITICAL markets. You always produce
-structured analysis to support a HUMAN trader; you never place trades yourself.
-
-MARKET
-======
-Question: ${market.question}
-Category: ${market.category}${market.is_hormuz ? " · HORMUZ" : ""}
-Outcomes: ${market.outcomes.join(" | ")}
-End date: ${market.end_date ?? "unknown"}
-Volume: ${market.volume ?? "?"}
-Liquidity: ${market.liquidity ?? "?"}
-URL: ${market.url ?? ""}
-Description: ${market.description?.slice(0, 600) ?? ""}
-
-RECENT PRICE SNAPSHOTS (YES side, oldest -> newest)
-===================================================
-${snapshotsBlock}
-
-RECENT SIGNALS (X, news, scrapers, Hormuz)
-==========================================
-${signalBlock}
-
-TOP TRADER ACTIVITY (this week)
-================================
-${traderBlock}
-
-INSTRUCTIONS
-============
-1. Form a thesis and a counter-thesis. Be concrete and reference signals.
-2. Choose an action: buy_yes, buy_no, sell_yes, sell_no, or hold.
-3. Set confidence in [0,1]. Use 'hold' for low conviction.
-4. Suggested size in USD assumes a $100k bankroll. Cap at 5% per idea.
-5. List 2-4 concrete risks that would invalidate the trade.
-6. List 2-5 key drivers behind your call (citing signals / trader behavior).
-7. trader_notes: one short paragraph summarizing what the top traders are doing
-   on this kind of market and whether you are with or against them.
-
-Be precise. No financial advice disclaimer. No markdown.`;
-
   const model = getAiModel();
 
-  const result = await generateText({
+  const tradingAgent = new ToolLoopAgent({
     model,
+    instructions: `You are the AI Market Council trading agent for Polymarket.
+
+Scope:
+- Only analyze political, war, and geopolitical markets.
+- You support a human trader. You never submit orders.
+- Your job is to decide what to do, how much capital to add, and whether top-trader flow supports or contradicts the idea.
+
+Process:
+- First inspect every required data tool in sequence.
+- Compare market pricing, signal quality, news/X evidence, Hormuz flags, and top-trader buying/selling.
+- Prefer HOLD when evidence is thin, stale, contradictory, or mostly noise.
+- Suggested size assumes a $100k bankroll. Cap one idea at 5% and use smaller sizing for weak edges.
+- Be concrete. Mention the strongest signal, the main invalidation risk, and what top traders are doing.
+- Return only the structured object required by the schema.`,
     output: Output.object({ schema: councilSchema }),
-    prompt,
+    stopWhen: stepCountIs(8),
+    tools: {
+      getMarketContext: tool({
+        description:
+          "Get the Polymarket question, category, outcomes, liquidity, volume, URL, and market description.",
+        inputSchema: z.object({}),
+        execute: async () => ({
+          id: market.id,
+          question: market.question,
+          category: market.category,
+          is_hormuz: market.is_hormuz,
+          outcomes: market.outcomes,
+          end_date: market.end_date,
+          volume: market.volume,
+          liquidity: market.liquidity,
+          url: market.url,
+          description: market.description?.slice(0, 1200) ?? null,
+        }),
+      }),
+      getPriceHistory: tool({
+        description:
+          "Get recent YES price snapshots, including oldest-to-newest compact series and latest captured values.",
+        inputSchema: z.object({}),
+        execute: async () => ({
+          series: snapshotsBlock,
+          latest: snapshots[0] ?? null,
+          count: snapshots.length,
+        }),
+      }),
+      getSignalFeed: tool({
+        description:
+          "Get recent X, news, scraper, and Hormuz signals relevant to this market.",
+        inputSchema: z.object({}),
+        execute: async () => ({
+          compact_feed: signalBlock,
+          signals: signals.slice(0, 40).map((signal) => ({
+            id: signal.id,
+            ts: signal.ts,
+            kind: signal.kind,
+            title: signal.title,
+            body: signal.body?.slice(0, 500) ?? null,
+            url: signal.url,
+            category: signal.category,
+            is_hormuz: signal.is_hormuz,
+            weight: signal.weight,
+          })),
+        }),
+      }),
+      getTopTraderFlow: tool({
+        description:
+          "Get recent top Polymarket trader trades for context on who is buying or selling and for how much.",
+        inputSchema: z.object({}),
+        execute: async () => ({
+          compact_flow: traderBlock,
+          traders: top5.map((trader) => ({
+            wallet: trader.proxy_wallet,
+            label:
+              trader.trader?.display_name ||
+              trader.trader?.username ||
+              trader.proxy_wallet.slice(0, 8),
+            rank: trader.rank,
+            pnl: trader.pnl,
+          })),
+        }),
+      }),
+    },
+    prepareStep: async ({ stepNumber }) => {
+      if (stepNumber === 0) {
+        return { toolChoice: { type: "tool", toolName: "getMarketContext" } };
+      }
+      if (stepNumber === 1) {
+        return { toolChoice: { type: "tool", toolName: "getPriceHistory" } };
+      }
+      if (stepNumber === 2) {
+        return { toolChoice: { type: "tool", toolName: "getSignalFeed" } };
+      }
+      if (stepNumber === 3) {
+        return { toolChoice: { type: "tool", toolName: "getTopTraderFlow" } };
+      }
+      return { toolChoice: "none" };
+    },
+  });
+
+  const result = await tradingAgent.generate({
+    prompt: `Run a full trading-agent evaluation for market ${marketId}. Use every tool first, then produce the structured trade recommendation.`,
   });
 
   const output = result.output as CouncilOutput;
@@ -222,7 +289,12 @@ Be precise. No financial advice disclaimer. No markdown.`;
     drivers: output.drivers,
     trader_notes: output.trader_notes,
     signal_ids: signals.map((s) => s.id),
-    raw: { output, prompt },
+    raw: {
+      output,
+      agent: true,
+      tool_trace: compactToolTrace(result.steps),
+      total_usage: result.totalUsage,
+    },
   });
 
   return row;
