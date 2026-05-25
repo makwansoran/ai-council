@@ -29,6 +29,12 @@ export function getAiModel() {
   return process.env.AI_MODEL || "openai/gpt-5";
 }
 
+export function getCapitalUnderManagementUsd() {
+  const raw = process.env.CAPITAL_UNDER_MANAGEMENT_USD || "100000";
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0 ? value : 100000;
+}
+
 export function getCronSecret() {
   return process.env.CRON_SECRET || "";
 }

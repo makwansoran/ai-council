@@ -62,9 +62,18 @@ export async function POST(req: Request) {
 
   const hormuz = await safe("hormuz", () => refreshHormuzMonitor());
 
+  const council = await safe("council", async () => {
+    const res = await fetch(`${base.origin}/api/ingest/council?limit=5&minAgeMinutes=30`, {
+      method: "POST",
+      headers: { "x-cron-secret": process.env.CRON_SECRET || "" },
+      cache: "no-store",
+    });
+    return res.json();
+  });
+
   return NextResponse.json({
     ok: true,
-    steps: [callMarkets, callLeaderboard, news, x, scrapers, hormuz],
+    steps: [callMarkets, callLeaderboard, news, x, scrapers, hormuz, council],
   });
 }
 

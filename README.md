@@ -13,8 +13,9 @@ It continuously:
   and arbitrary web pages.
 - Watches the **Strait of Hormuz 24/7** by aggregating Hormuz-relevant X posts
   and news into an event timeline.
-- Feeds everything into an **AI Council** that produces structured trade
-  analysis (thesis, counter-thesis, confidence, risks, drivers, suggested size).
+- Feeds everything into an **AI Council** that runs continuously through the
+  ingest loop and produces structured trade analysis (thesis, counter-thesis,
+  confidence, risks, drivers, suggested size).
 - Lets you run **paper trades** and prepare **manual-confirm order intents**.
   Nothing is ever submitted to Polymarket automatically.
 
@@ -51,6 +52,7 @@ See [.env.example](.env.example). At minimum you need:
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `AI_GATEWAY_API_KEY` (or run on Vercel for OIDC)
 - `AI_MODEL` (defaults to `openai/gpt-5`)
+- `CAPITAL_UNDER_MANAGEMENT_USD` (defaults to `100000`, used for allocation sizing)
 - Optional: `X_BEARER_TOKEN` for the official X API (otherwise nitter fallback)
 - Optional: `CRON_SECRET` to lock the ingest endpoints
 
@@ -62,11 +64,12 @@ All accept `POST` or `GET` and respect the `CRON_SECRET` (via
 | Path                            | What it does                                            |
 | ------------------------------- | ------------------------------------------------------- |
 | `/api/ingest/markets`           | Refresh politics/war markets + snapshot prices          |
-| `/api/ingest/leaderboard`       | Pull leaderboard + top-25 trader positions/trades        |
+| `/api/ingest/leaderboard`       | Pull leaderboard + top-1000 trader overwatch             |
 | `/api/ingest/news`              | Pull all enabled news sources                            |
 | `/api/ingest/x`                 | Pull all enabled X watchlist accounts                    |
 | `/api/ingest/scrapers`          | Run all user-defined scrapers whose cadence is due       |
 | `/api/ingest/hormuz`            | Derive Hormuz events from recent flagged content         |
+| `/api/ingest/council`           | Continuously analyze due markets with the AI council     |
 | `/api/ingest/all`               | Run everything in sequence                               |
 
 Point a scheduler (Vercel cron, Supabase scheduled function, GitHub Actions,

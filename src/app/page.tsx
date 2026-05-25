@@ -6,6 +6,7 @@ import {
   recentHormuzEvents,
   recentSignals,
   listScrapers,
+  topTraderBuyingByMarket,
 } from "@/lib/repo";
 import { PageHeader } from "@/components/page-header";
 import { Stat } from "@/components/ui/stat";
@@ -13,6 +14,7 @@ import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { AutoRefresh } from "@/components/auto-refresh";
 import { TriggerIngest } from "@/components/trigger-ingest";
+import { getCapitalUnderManagementUsd } from "@/lib/env";
 import { formatNumber, formatPct, formatUsd, hoursAgoIso, timeAgo } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -24,19 +26,25 @@ export default async function DashboardPage() {
   let signals: Awaited<ReturnType<typeof recentSignals>> = [];
   let hormuz: Awaited<ReturnType<typeof recentHormuzEvents>> = [];
   let scrapers: Awaited<ReturnType<typeof listScrapers>> = [];
+  let buyerSummaries: Awaited<ReturnType<typeof topTraderBuyingByMarket>> = {};
   let dataError: string | null = null;
 
   const cutoff24h = hoursAgoIso(24);
+  const capitalUnderManagement = getCapitalUnderManagementUsd();
 
   try {
     [markets, traders, council, signals, hormuz, scrapers] = await Promise.all([
       listInScopeMarkets(80),
       listTopTraders("week", 10),
-      recentCouncilRuns(8),
+      recentCouncilRuns(250),
       recentSignals(40),
       recentHormuzEvents(8),
       listScrapers(),
     ]);
+    buyerSummaries = await topTraderBuyingByMarket(
+      markets.slice(0, 25).map((m) => m.id),
+      7,
+    );
   } catch (err) {
     dataError = (err as Error).message;
   }
@@ -117,8 +125,8 @@ export default async function DashboardPage() {
         />
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
+      <div className="grid gap-4">
+        <Card>
           <CardHeader>
             <CardTitle>Top markets · politics + war</CardTitle>
             <Link
@@ -135,51 +143,121 @@ export default async function DashboardPage() {
                   <tr>
                     <th className="px-3 py-2">Question</th>
                     <th className="px-3 py-2">Cat</th>
+                    <th className="px-3 py-2">What to do</th>
+                    <th className="px-3 py-2 text-right">Add</th>
+                    <th className="px-3 py-2">Who is buying</th>
                     <th className="px-3 py-2 text-right">Volume</th>
                     <th className="px-3 py-2 text-right">Liq</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {markets.slice(0, 25).map((m) => (
-                    <tr
-                      key={m.id}
-                      className="border-t border-[var(--border)] hover:bg-[var(--background-elevated)]"
-                    >
-                      <td className="px-3 py-2">
-                        <Link
-                          href={`/markets/${m.id}`}
-                          className="line-clamp-2 hover:text-[var(--accent-strong)]"
-                        >
-                          {m.question}
-                        </Link>
-                      </td>
-                      <td className="px-3 py-2">
-                        <Badge
-                          tone={
-                            m.is_hormuz
-                              ? "danger"
-                              : m.category === "war"
-                                ? "warn"
-                                : m.category === "geopolitics"
-                                  ? "accent"
-                                  : "default"
-                          }
-                        >
-                          {m.is_hormuz ? "hormuz" : m.category}
-                        </Badge>
-                      </td>
-                      <td className="px-3 py-2 text-right tabular-nums">
-                        {formatUsd(m.volume)}
-                      </td>
-                      <td className="px-3 py-2 text-right tabular-nums">
-                        {formatUsd(m.liquidity)}
-                      </td>
-                    </tr>
-                  ))}
+                  {markets.slice(0, 25).map((m) => {
+                    const latestCouncil = council.find((r) => r.market_id === m.id);
+                    const buyers = buyerSummaries[m.id];
+                    const topBuyer = buyers?.top_buyers[0];
+                    const traderPressure = buyers
+                      ? Math.min(0.75, buyers.net_buy_notional / 100000)
+                      : 0;
+                    const confidence =
+                      latestCouncil?.confidence ??
+                      Math.max(0.2, Math.min(0.62, 0.3 + traderPressure));
+                    const action =
+                      latestCouncil?.action ??
+                      (buyers && buyers.net_buy_notional > 10000
+                        ? "buy_yes"
+                        : "hold");
+                    const allocation =
+                      latestCouncil?.suggested_size_usd
+                        ? latestCouncil.suggested_size_usd *
+                          (capitalUnderManagement / 100000)
+                        : action === "hold"
+                          ? 0
+                          : capitalUnderManagement *
+                            Math.min(0.03, confidence * 0.03);
+                    const actionTone =
+                      action === "hold"
+                        ? "muted"
+                        : action.includes("yes")
+                          ? "positive"
+                          : "danger";
+                    return (
+                      <tr
+                        key={m.id}
+                        className="border-t border-[var(--border)] hover:bg-[var(--background-elevated)]"
+                      >
+                        <td className="max-w-[320px] px-3 py-2">
+                          <Link
+                            href={`/markets/${m.id}`}
+                            className="line-clamp-2 hover:text-[var(--accent-strong)]"
+                          >
+                            {m.question}
+                          </Link>
+                        </td>
+                        <td className="px-3 py-2">
+                          <Badge
+                            tone={
+                              m.is_hormuz
+                                ? "danger"
+                                : m.category === "war"
+                                  ? "warn"
+                                  : m.category === "geopolitics"
+                                    ? "accent"
+                                    : "default"
+                            }
+                          >
+                            {m.is_hormuz ? "hormuz" : m.category}
+                          </Badge>
+                        </td>
+                        <td className="px-3 py-2">
+                          <Badge tone={actionTone}>
+                            {action.replace("_", " ")}
+                          </Badge>
+                          <div className="mt-1 text-[10px] text-[var(--foreground-muted)]">
+                            {latestCouncil
+                              ? `council ${formatPct(confidence)}`
+                              : buyers
+                                ? `trader pressure ${formatPct(confidence)}`
+                                : "waiting for signal"}
+                          </div>
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums">
+                          <div className="font-semibold">{formatUsd(allocation)}</div>
+                          <div className="text-[10px] text-[var(--foreground-muted)]">
+                            {formatPct(capitalUnderManagement ? allocation / capitalUnderManagement : 0)} AUM
+                          </div>
+                        </td>
+                        <td className="min-w-[240px] px-3 py-2">
+                          {buyers && buyers.buy_trade_count ? (
+                            <div>
+                              <div className="text-xs">
+                                {buyers.unique_buyers} buyers · {formatUsd(buyers.total_buy_notional)}
+                                {buyers.top_outcome ? ` on ${buyers.top_outcome}` : ""}
+                              </div>
+                              {topBuyer ? (
+                                <div className="mt-1 text-[10px] text-[var(--foreground-muted)]">
+                                  Top: {topBuyer.label} · {formatUsd(topBuyer.notional)} · {topBuyer.top_outcome}
+                                </div>
+                              ) : null}
+                            </div>
+                          ) : (
+                            <span className="text-xs text-[var(--foreground-muted)]">
+                              No top-trader buys captured
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums">
+                          {formatUsd(m.volume)}
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums">
+                          {formatUsd(m.liquidity)}
+                        </td>
+                      </tr>
+                    );
+                  })}
                   {markets.length === 0 ? (
                     <tr>
                       <td
-                        colSpan={4}
+                        colSpan={7}
                         className="px-3 py-6 text-center text-xs text-[var(--foreground-muted)]"
                       >
                         No markets yet. Click <strong>Run all ingest</strong>{" "}

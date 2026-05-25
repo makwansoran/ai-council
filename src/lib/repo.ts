@@ -280,6 +280,147 @@ export async function topTraderBuyScatter(
     .slice(0, limit);
 }
 
+export interface MarketBuyerSummary {
+  market_id: string;
+  total_buy_notional: number;
+  total_sell_notional: number;
+  net_buy_notional: number;
+  buy_trade_count: number;
+  sell_trade_count: number;
+  unique_buyers: number;
+  top_buyers: Array<{
+    proxy_wallet: string;
+    label: string;
+    notional: number;
+    trade_count: number;
+    latest_ts: string;
+    top_outcome: string;
+  }>;
+  top_outcome: string | null;
+}
+
+export async function topTraderBuyingByMarket(
+  marketIds: string[],
+  days = 7,
+): Promise<Record<string, MarketBuyerSummary>> {
+  if (!marketIds.length) return {};
+  const since = new Date(Date.now() - days * 24 * 3600 * 1000).toISOString();
+  const sb = supabaseService();
+  const { data, error } = await sb
+    .from("trader_trades")
+    .select("market_id,proxy_wallet,outcome,side,notional,ts,trader:traders(*)")
+    .in("market_id", marketIds)
+    .gte("ts", since)
+    .order("ts", { ascending: false })
+    .limit(20000);
+  if (error) throw error;
+
+  const summaries = new Map<
+    string,
+    MarketBuyerSummary & {
+      buyerMap: Map<
+        string,
+        {
+          proxy_wallet: string;
+          label: string;
+          notional: number;
+          trade_count: number;
+          latest_ts: string;
+          outcomes: Map<string, number>;
+        }
+      >;
+      outcomeMap: Map<string, number>;
+    }
+  >();
+
+  for (const row of (data || []) as unknown as Array<{
+    market_id: string;
+    proxy_wallet: string;
+    outcome: string | null;
+    side: "buy" | "sell";
+    notional: number | null;
+    ts: string;
+    trader?: TraderRow | TraderRow[] | null;
+  }>) {
+    const current =
+      summaries.get(row.market_id) ??
+      {
+        market_id: row.market_id,
+        total_buy_notional: 0,
+        total_sell_notional: 0,
+        net_buy_notional: 0,
+        buy_trade_count: 0,
+        sell_trade_count: 0,
+        unique_buyers: 0,
+        top_buyers: [],
+        top_outcome: null,
+        buyerMap: new Map(),
+        outcomeMap: new Map(),
+      };
+    const notional = row.notional ?? 0;
+    if (row.side === "buy") {
+      current.total_buy_notional += notional;
+      current.buy_trade_count += 1;
+      const trader = Array.isArray(row.trader) ? row.trader[0] : row.trader;
+      const label =
+        trader?.display_name || trader?.username || `${row.proxy_wallet.slice(0, 8)}...`;
+      const buyer =
+        current.buyerMap.get(row.proxy_wallet) ??
+        {
+          proxy_wallet: row.proxy_wallet,
+          label,
+          notional: 0,
+          trade_count: 0,
+          latest_ts: row.ts,
+          outcomes: new Map<string, number>(),
+        };
+      buyer.notional += notional;
+      buyer.trade_count += 1;
+      if (row.ts > buyer.latest_ts) buyer.latest_ts = row.ts;
+      const outcome = row.outcome || "unknown";
+      buyer.outcomes.set(outcome, (buyer.outcomes.get(outcome) ?? 0) + notional);
+      current.buyerMap.set(row.proxy_wallet, buyer);
+      current.outcomeMap.set(outcome, (current.outcomeMap.get(outcome) ?? 0) + notional);
+    } else {
+      current.total_sell_notional += notional;
+      current.sell_trade_count += 1;
+    }
+    current.net_buy_notional = current.total_buy_notional - current.total_sell_notional;
+    summaries.set(row.market_id, current);
+  }
+
+  return Object.fromEntries(
+    [...summaries.entries()].map(([marketId, summary]) => {
+      const topBuyers = [...summary.buyerMap.values()]
+        .sort((a, b) => b.notional - a.notional)
+        .slice(0, 5)
+        .map((buyer) => {
+          const topOutcome =
+            [...buyer.outcomes.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ??
+            "unknown";
+          return { ...buyer, top_outcome: topOutcome };
+        });
+      const topOutcome =
+        [...summary.outcomeMap.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ??
+        null;
+      return [
+        marketId,
+        {
+          market_id: marketId,
+          total_buy_notional: summary.total_buy_notional,
+          total_sell_notional: summary.total_sell_notional,
+          net_buy_notional: summary.net_buy_notional,
+          buy_trade_count: summary.buy_trade_count,
+          sell_trade_count: summary.sell_trade_count,
+          unique_buyers: summary.buyerMap.size,
+          top_buyers: topBuyers,
+          top_outcome: topOutcome,
+        },
+      ];
+    }),
+  );
+}
+
 // ---------- Scrapers ----------
 
 export async function listScrapers(): Promise<ScraperRow[]> {
