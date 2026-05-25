@@ -1,18 +1,18 @@
 @import "tailwindcss";
 
 :root {
-  --background: #07090d;
-  --background-elevated: #0d1117;
-  --background-panel: #111722;
-  --foreground: #e6edf3;
-  --foreground-muted: #8b949e;
-  --border: #1f2733;
-  --border-strong: #2a3441;
-  --accent: #5eead4;
-  --accent-strong: #2dd4bf;
-  --warn: #f59e0b;
-  --danger: #f87171;
-  --positive: #34d399;
+  --background: #f8fafc;
+  --background-elevated: #ffffff;
+  --background-panel: #ffffff;
+  --foreground: #111827;
+  --foreground-muted: #64748b;
+  --border: #e2e8f0;
+  --border-strong: #cbd5e1;
+  --accent: #2563eb;
+  --accent-strong: #1d4ed8;
+  --warn: #b45309;
+  --danger: #dc2626;
+  --positive: #059669;
 }
 
 @theme inline {
@@ -45,7 +45,7 @@ body {
 
 ::selection {
   background: var(--accent);
-  color: var(--background);
+  color: #ffffff;
 }
 
 .scrollbar-thin::-webkit-scrollbar {
@@ -66,18 +66,18 @@ body {
   height: 8px;
   border-radius: 9999px;
   background: var(--positive);
-  box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.7);
+  box-shadow: 0 0 0 0 rgba(5, 150, 105, 0.35);
   animation: pulse 2s infinite;
 }
 
 @keyframes pulse {
   0% {
-    box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.7);
+    box-shadow: 0 0 0 0 rgba(5, 150, 105, 0.35);
   }
   70% {
-    box-shadow: 0 0 0 10px rgba(52, 211, 153, 0);
+    box-shadow: 0 0 0 10px rgba(5, 150, 105, 0);
   }
   100% {
-    box-shadow: 0 0 0 0 rgba(52, 211, 153, 0);
+    box-shadow: 0 0 0 0 rgba(5, 150, 105, 0);
   }
 }
