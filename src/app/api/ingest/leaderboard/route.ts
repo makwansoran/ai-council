@@ -2,8 +2,8 @@ import { NextResponse } from "next/server";
 import { checkCronSecret } from "@/lib/cron";
 import {
   fetchLeaderboard,
+  fetchRecentTrades,
   fetchTraderPositions,
-  fetchTraderTrades,
 } from "@/lib/polymarket/api";
 import {
   insertSignals,
@@ -15,10 +15,10 @@ import {
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 async function ingest() {
-  const entries = await fetchLeaderboard();
+  const entries = await fetchLeaderboard(1000);
   if (!entries.length) {
     return {
       traders: 0,
@@ -58,20 +58,25 @@ async function ingest() {
     })),
   );
 
-  // For top-N day traders, also pull positions and recent trades.
-  const topDay = entries
-    .filter((e) => e.period === "day")
+  // The overwatch set is the top 1000 all-time leaderboard by PnL.
+  // Fall back to the union of all periods if the all-time window is empty.
+  const topAll = entries
+    .filter((e) => e.period === "all")
     .sort((a, b) => (a.rank ?? 9999) - (b.rank ?? 9999))
-    .slice(0, 25);
+    .slice(0, 1000);
+  const overwatch = topAll.length
+    ? topAll
+    : [...distinctTraders.values()].slice(0, 1000);
+  const overwatchWallets = new Set(overwatch.map((t) => t.proxyWallet));
 
   let positions = 0;
   let trades = 0;
-  for (const t of topDay) {
+
+  // Positions are heavier than trades; sample the top 100 every cycle while
+  // global trades give us 24/7 buy/sell coverage across the whole top 1000.
+  for (const t of overwatch.slice(0, 100)) {
     try {
-      const [pos, tr] = await Promise.all([
-        fetchTraderPositions(t.proxyWallet),
-        fetchTraderTrades(t.proxyWallet, 25),
-      ]);
+      const pos = await fetchTraderPositions(t.proxyWallet);
       if (pos.length) {
         await insertTraderPositions(
           pos.map((p) => ({
@@ -86,50 +91,56 @@ async function ingest() {
         );
         positions += pos.length;
       }
-      if (tr.length) {
-        await insertTraderTrades(
-          tr.map((tt) => ({
-            proxy_wallet: t.proxyWallet,
-            market_id: tt.conditionId || (tt.asset ?? ""),
-            side: (tt.side === "BUY" ? "buy" : "sell") as "buy" | "sell",
-            outcome: tt.outcome ?? "",
-            size: tt.size,
-            price: tt.price,
-            notional: tt.size * tt.price,
-            ts: new Date(tt.timestamp * 1000).toISOString(),
-            tx_hash: tt.transactionHash,
-          })),
-        );
-        trades += tr.length;
-
-        // Emit trader_action signals for trades > $5k.
-        const big = tr.filter((tt) => tt.size * tt.price >= 5000).slice(0, 5);
-        if (big.length) {
-          await insertSignals(
-            big.map((tt) => ({
-              kind: "trader_action" as const,
-              title: `${t.displayName || t.username || t.proxyWallet.slice(0, 8)} ${tt.side} ${tt.outcome} $${Math.round(tt.size * tt.price).toLocaleString()}`,
-              body: tt.title || null,
-              url: tt.slug
-                ? `https://polymarket.com/market/${tt.slug}`
-                : null,
-              category: "politics" as const, // refined later by classifier when joined to market
-              is_hormuz: false,
-              weight: 2,
-              market_id: tt.conditionId || null,
-              metadata: { trader: t, trade: tt },
-            })),
-          );
-        }
-      }
     } catch (err) {
       console.error("[leaderboard] trader pull failed:", t.proxyWallet, err);
+    }
+  }
+
+  const recentTrades = await fetchRecentTrades(10000);
+  const watchedTrades = recentTrades.filter((tt) =>
+    overwatchWallets.has(tt.proxyWallet?.toLowerCase()),
+  );
+
+  if (watchedTrades.length) {
+    await insertTraderTrades(
+      watchedTrades.map((tt) => ({
+        proxy_wallet: tt.proxyWallet.toLowerCase(),
+        market_id: tt.conditionId || (tt.asset ?? ""),
+        side: (tt.side === "BUY" ? "buy" : "sell") as "buy" | "sell",
+        outcome: tt.outcome ?? "",
+        size: tt.size,
+        price: tt.price,
+        notional: tt.size * tt.price,
+        ts: new Date(tt.timestamp * 1000).toISOString(),
+        tx_hash: tt.transactionHash,
+      })),
+    );
+    trades = watchedTrades.length;
+
+    const big = watchedTrades
+      .filter((tt) => tt.size * tt.price >= 5000)
+      .slice(0, 50);
+    if (big.length) {
+      await insertSignals(
+        big.map((tt) => ({
+          kind: "trader_action" as const,
+          title: `${tt.name || tt.pseudonym || tt.proxyWallet.slice(0, 8)} ${tt.side} ${tt.outcome} $${Math.round(tt.size * tt.price).toLocaleString()}`,
+          body: tt.title || null,
+          url: tt.slug ? `https://polymarket.com/market/${tt.slug}` : null,
+          category: "politics" as const,
+          is_hormuz: false,
+          weight: 2,
+          market_id: tt.conditionId || null,
+          metadata: { trade: tt },
+        })),
+      );
     }
   }
 
   return {
     traders: distinctTraders.size,
     snapshots: entries.length,
+    overwatch: overwatch.length,
     positions,
     trades,
   };

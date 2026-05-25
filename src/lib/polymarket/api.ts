@@ -241,6 +241,10 @@ export interface PolyTrade {
   transactionHash: string;
   title?: string;
   slug?: string;
+  eventSlug?: string;
+  icon?: string;
+  name?: string;
+  pseudonym?: string;
 }
 
 export async function fetchTraderTrades(
@@ -249,6 +253,16 @@ export async function fetchTraderTrades(
 ): Promise<PolyTrade[]> {
   const res = await fetch(
     `${DATA}/trades?user=${proxyWallet}&limit=${limit}&takerOnly=false`,
+    { headers: { accept: "application/json" }, cache: "no-store" },
+  );
+  if (!res.ok) return [];
+  const data = (await res.json()) as PolyTrade[];
+  return Array.isArray(data) ? data : [];
+}
+
+export async function fetchRecentTrades(limit = 10000): Promise<PolyTrade[]> {
+  const res = await fetch(
+    `${DATA}/trades?limit=${limit}&offset=0&takerOnly=false`,
     { headers: { accept: "application/json" }, cache: "no-store" },
   );
   if (!res.ok) return [];
@@ -271,70 +285,82 @@ export interface LeaderboardEntry {
 
 interface RawLeaderboardItem {
   proxyWallet?: string;
+  userName?: string;
   name?: string;
   pseudonym?: string;
   displayUsernamePublic?: boolean;
   amount?: number;
-  rank?: number;
+  rank?: number | string;
   pnl?: number;
+  vol?: number;
   volume?: number;
   profileImage?: string;
   bio?: string;
+  xUsername?: string;
+  verifiedBadge?: boolean;
 }
 
-const LEADERBOARD_BASES = [
-  "https://lb-api.polymarket.com",
-  DATA,
-];
-
 async function fetchLeaderboardWindow(
-  window: "1d" | "1w" | "1m" | "all",
+  timePeriod: "DAY" | "WEEK" | "MONTH" | "ALL",
+  offset: number,
+  category = "OVERALL",
 ): Promise<RawLeaderboardItem[]> {
-  for (const base of LEADERBOARD_BASES) {
-    try {
-      const url = `${base}/leaderboard?window=${window}&limit=100`;
-      const res = await fetch(url, {
-        headers: { accept: "application/json" },
-        cache: "no-store",
-      });
-      if (!res.ok) continue;
-      const data = await res.json();
-      if (Array.isArray(data)) return data as RawLeaderboardItem[];
-      if (data && Array.isArray((data as { data?: unknown[] }).data)) {
-        return (data as { data: RawLeaderboardItem[] }).data;
-      }
-    } catch {
-      // try next base
+  const params = new URLSearchParams({
+    category,
+    timePeriod,
+    orderBy: "PNL",
+    limit: "50",
+    offset: String(offset),
+  });
+  try {
+    const res = await fetch(`${DATA}/v1/leaderboard?${params.toString()}`, {
+      headers: { accept: "application/json" },
+      cache: "no-store",
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    if (Array.isArray(data)) return data as RawLeaderboardItem[];
+    if (data && Array.isArray((data as { data?: unknown[] }).data)) {
+      return (data as { data: RawLeaderboardItem[] }).data;
     }
+  } catch {
+    return [];
   }
   return [];
 }
 
-export async function fetchLeaderboard(): Promise<LeaderboardEntry[]> {
-  const windows: Array<{ key: "1d" | "1w" | "1m" | "all"; period: LeaderboardEntry["period"] }> = [
-    { key: "1d", period: "day" },
-    { key: "1w", period: "week" },
-    { key: "1m", period: "month" },
-    { key: "all", period: "all" },
+export async function fetchLeaderboard(limitPerPeriod = 1000): Promise<LeaderboardEntry[]> {
+  const windows: Array<{
+    key: "DAY" | "WEEK" | "MONTH" | "ALL";
+    period: LeaderboardEntry["period"];
+  }> = [
+    { key: "DAY", period: "day" },
+    { key: "WEEK", period: "week" },
+    { key: "MONTH", period: "month" },
+    { key: "ALL", period: "all" },
   ];
 
   const all: LeaderboardEntry[] = [];
   for (const w of windows) {
-    const items = await fetchLeaderboardWindow(w.key);
-    items.forEach((item, idx) => {
+    for (let offset = 0; offset < limitPerPeriod; offset += 50) {
+      const items = await fetchLeaderboardWindow(w.key, offset);
+      if (!items.length) break;
+      items.forEach((item, idx) => {
       const proxyWallet = item.proxyWallet?.toLowerCase();
       if (!proxyWallet) return;
       all.push({
         proxyWallet,
-        username: item.pseudonym || item.name || null,
-        displayName: item.name || item.pseudonym || null,
+        username: item.userName || item.pseudonym || item.name || null,
+        displayName: item.userName || item.name || item.pseudonym || null,
         profileImage: item.profileImage || null,
-        rank: item.rank ?? idx + 1,
+        rank: item.rank ? Number(item.rank) : offset + idx + 1,
         pnl: item.pnl ?? item.amount ?? null,
-        volume: item.volume ?? null,
+        volume: item.vol ?? item.volume ?? null,
         period: w.period,
       });
-    });
+      });
+      if (items.length < 50) break;
+    }
   }
   return all;
 }

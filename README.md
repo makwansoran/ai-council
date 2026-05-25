@@ -6,8 +6,9 @@ Polymarket analytics tool focused on **political and war/geopolitical markets**.
 It continuously:
 
 - Pulls **Polymarket** markets (politics + war scope) and snapshots prices.
-- Tracks the **Polymarket leaderboard** and records what top traders are doing
-  (positions, trades, PnL over time).
+- Tracks the **top 1000 Polymarket traders** and records what they are buying
+  and selling 24/7 (positions sampled, trades captured continuously, PnL over
+  time).
 - Runs configurable **AI scrapers** against X (Twitter) accounts, news RSS feeds,
   and arbitrary web pages.
 - Watches the **Strait of Hormuz 24/7** by aggregating Hormuz-relevant X posts
@@ -87,7 +88,8 @@ stored in `polymarket_api_references` and `polymarket_api_runs`.
 - `/` — mission control dashboard.
 - `/markets` — politics + war market list.
 - `/markets/[id]` — market detail with snapshots, signals, council history.
-- `/leaderboard` — top traders (day / week / month / all).
+- `/leaderboard` — top 1000 traders, 24/7 buy/sell overwatch, and a scatterplot
+  of what top traders are buying most.
 - `/leaderboard/[wallet]` — trader detail with positions and trades.
 - `/signals` — unified live feed.
 - `/scrapers` — add, edit, pause, run, and remove custom scrapers.

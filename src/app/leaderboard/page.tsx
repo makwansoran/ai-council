@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { PageHeader } from "@/components/page-header";
-import { Card, CardBody } from "@/components/ui/card";
+import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { AutoRefresh } from "@/components/auto-refresh";
 import { TriggerIngest } from "@/components/trigger-ingest";
-import { listTopTraders } from "@/lib/repo";
+import { TopTraderScatterplot } from "@/components/top-trader-scatterplot";
+import { listTopTraders, topTraderBuyScatter } from "@/lib/repo";
 import { formatUsd, timeAgo } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -19,16 +20,28 @@ export default async function LeaderboardPage({ searchParams }: Props) {
   const period = (periods.includes(sp.period as never)
     ? sp.period
     : "week") as "day" | "week" | "month" | "all";
-  const traders = await listTopTraders(period, 100).catch(() => []);
+  const [traders, scatter] = await Promise.all([
+    listTopTraders(period, 1000).catch(() => []),
+    topTraderBuyScatter(7, 80).catch(() => []),
+  ]);
 
   return (
     <div className="space-y-4">
       <AutoRefresh intervalSeconds={45} />
       <PageHeader
         title="Top traders"
-        description="Watch what winning Polymarket traders are doing. Positions and trades are recorded continuously for the daily top 25."
+        description="Top 1000 Polymarket traders with 24/7 buy/sell overwatch. Recent trades are collected continuously and visualized below."
         actions={<TriggerIngest endpoint="/api/ingest/leaderboard" label="Refresh leaderboard" />}
       />
+
+      <Card>
+        <CardHeader>
+          <CardTitle>What top traders are buying most · last 7 days</CardTitle>
+        </CardHeader>
+        <CardBody>
+          <TopTraderScatterplot points={scatter} />
+        </CardBody>
+      </Card>
 
       <div className="flex gap-2">
         {periods.map((p) => (

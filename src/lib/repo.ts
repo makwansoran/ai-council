@@ -198,6 +198,88 @@ export async function recentTraderTrades(
   return (data || []) as TraderTradeRow[];
 }
 
+export interface TopTraderBuyScatterPoint {
+  market_id: string;
+  outcome: string;
+  total_notional: number;
+  trade_count: number;
+  unique_traders: number;
+  avg_price: number;
+  latest_ts: string;
+}
+
+export async function topTraderBuyScatter(
+  days = 7,
+  limit = 80,
+): Promise<TopTraderBuyScatterPoint[]> {
+  const since = new Date(Date.now() - days * 24 * 3600 * 1000).toISOString();
+  const sb = supabaseService();
+  const { data, error } = await sb
+    .from("trader_trades")
+    .select("market_id,outcome,proxy_wallet,notional,price,ts,side")
+    .eq("side", "buy")
+    .gte("ts", since)
+    .order("ts", { ascending: false })
+    .limit(20000);
+  if (error) throw error;
+
+  const grouped = new Map<
+    string,
+    {
+      market_id: string;
+      outcome: string;
+      total_notional: number;
+      trade_count: number;
+      traders: Set<string>;
+      price_sum: number;
+      latest_ts: string;
+    }
+  >();
+
+  for (const row of (data || []) as Array<{
+    market_id: string | null;
+    outcome: string | null;
+    proxy_wallet: string;
+    notional: number | null;
+    price: number | null;
+    ts: string;
+  }>) {
+    const marketId = row.market_id || "unknown";
+    const outcome = row.outcome || "unknown";
+    const key = `${marketId}:${outcome}`;
+    const current =
+      grouped.get(key) ??
+      {
+        market_id: marketId,
+        outcome,
+        total_notional: 0,
+        trade_count: 0,
+        traders: new Set<string>(),
+        price_sum: 0,
+        latest_ts: row.ts,
+      };
+    current.total_notional += row.notional ?? 0;
+    current.trade_count += 1;
+    current.traders.add(row.proxy_wallet);
+    current.price_sum += row.price ?? 0;
+    if (row.ts > current.latest_ts) current.latest_ts = row.ts;
+    grouped.set(key, current);
+  }
+
+  return [...grouped.values()]
+    .map((g) => ({
+      market_id: g.market_id,
+      outcome: g.outcome,
+      total_notional: g.total_notional,
+      trade_count: g.trade_count,
+      unique_traders: g.traders.size,
+      avg_price: g.trade_count ? g.price_sum / g.trade_count : 0,
+      latest_ts: g.latest_ts,
+    }))
+    .sort((a, b) => b.total_notional - a.total_notional)
+    .slice(0, limit);
+}
+
 // ---------- Scrapers ----------
 
 export async function listScrapers(): Promise<ScraperRow[]> {
